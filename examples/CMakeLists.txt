@@ -165,6 +165,7 @@ set(EXAMPLES
 	vertexattributes
 	viewportarray
 	vulkanscene
+	panda_raytracing
 )
 
 buildExamples()
