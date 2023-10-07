@@ -120,12 +120,15 @@ endfunction(buildExamples)
 
 if(RESOURCE_INSTALL_DIR)
 	add_definitions(-DVK_EXAMPLE_ASSETS_DIR=\"${RESOURCE_INSTALL_DIR}/\")
+	add_definitions(-DVK_PANDA_EXAMPLE_ASSETS_DIR=\"${RESOURCE_INSTALL_DIR}/\")
 	add_definitions(-DVK_EXAMPLE_SHADERS_DIR=\"${RESOURCE_INSTALL_DIR}/shaders/\")
 	install(DIRECTORY assets/ DESTINATION ${RESOURCE_INSTALL_DIR}/)
+	install(DIRECTORY panda_assets/ DESTINATION ${RESOURCE_INSTALL_DIR}/)
 	install(DIRECTORY shaders/ DESTINATION ${RESOURCE_INSTALL_DIR}/shaders/)
 else()
 	add_definitions(-DVK_EXAMPLE_ASSETS_DIR=\"${CMAKE_SOURCE_DIR}/assets/\")
 	add_definitions(-DVK_EXAMPLE_SHADERS_DIR=\"${CMAKE_SOURCE_DIR}/shaders/\")
+	add_definitions(-DVK_PANDA_EXAMPLE_ASSETS_DIR=\"${CMAKE_SOURCE_DIR}/panda_assets/\")
 endif()
 
 # Compiler specific stuff

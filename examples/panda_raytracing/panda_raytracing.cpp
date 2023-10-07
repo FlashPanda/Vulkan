@@ -5,6 +5,15 @@
 *
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
+#define TINYGLTF_IMPLEMENTATION
+#define STB_IMAGE_IMPLEMENTATION
+#define TINYGLTF_NO_STB_IMAGE_WRITE
+#define TINYGLTF_NO_STB_IMAGE
+#define TINYGLTF_NO_EXTERNAL_IMAGE
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+#define TINYGLTF_ANDROID_LOAD_FROM_ASSETS
+#endif
+
 #include "tiny_gltf.h"
 #include "vulkanexamplebase.h"
 
@@ -381,10 +390,48 @@ void VulkanglTFScene::draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipel
 	}
 }
 
+
+// Holds data for a ray tracing scratch buffer that is used as a temporary storage
+struct RayTracingScratchBuffer
+{
+	uint64_t deviceAddress = 0;
+	VkBuffer handle = VK_NULL_HANDLE;
+	VkDeviceMemory memory = VK_NULL_HANDLE;
+};
+
+// Ray tracing acceleration structure
+struct AccelerationStructure {
+	VkAccelerationStructureKHR handle;
+	uint64_t deviceAddress = 0;
+	VkDeviceMemory memory;
+	VkBuffer buffer;
+};
+
 class VulkanExample : public VulkanExampleBase
 {
 public:
 	VulkanglTFScene glTFScene;
+
+	VkPhysicalDeviceRayTracingPipelinePropertiesKHR  rayTracingPipelineProperties{};
+	VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures{};
+
+	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR;
+	PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
+	PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR;
+	PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR;
+	PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR;
+	PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
+	PFN_vkBuildAccelerationStructuresKHR vkBuildAccelerationStructuresKHR;
+	PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
+	PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR;
+	PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
+
+	AccelerationStructure bottomLevelAS{};
+	AccelerationStructure topLevelAS{};
+
+	vks::Buffer vertexBuffer;
+	vks::Buffer indexBuffer;
+	uint32_t indexCount;
 
 	VulkanExample() : VulkanExampleBase()
 	{
@@ -395,9 +442,335 @@ public:
 
 	}
 
+	void prepare()
+	{
+		VulkanExampleBase::prepare();
+
+		loadglTFFile(getPandaAssetPath() + "cornell_box/scene.gltf");
+
+		// Get ray tracing pipeline properties, which will be used later on in the sample
+		rayTracingPipelineProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+		VkPhysicalDeviceProperties2 deviceProperties2{};
+		deviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+		deviceProperties2.pNext = &rayTracingPipelineProperties;
+		vkGetPhysicalDeviceProperties2(physicalDevice, &deviceProperties2);
+
+		// Get acceleration structure properties, which will be used later on in the sample
+		accelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+		VkPhysicalDeviceFeatures2 deviceFeatures2{};
+		deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+		deviceFeatures2.pNext = &accelerationStructureFeatures;
+		vkGetPhysicalDeviceFeatures2(physicalDevice, &deviceFeatures2);
+
+		// Get the ray tracing and accelertion structure related function pointers required by this sample
+		vkGetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(vkGetDeviceProcAddr(device, "vkGetBufferDeviceAddressKHR"));
+		vkCmdBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>(vkGetDeviceProcAddr(device, "vkCmdBuildAccelerationStructuresKHR"));
+		vkBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkBuildAccelerationStructuresKHR>(vkGetDeviceProcAddr(device, "vkBuildAccelerationStructuresKHR"));
+		vkCreateAccelerationStructureKHR = reinterpret_cast<PFN_vkCreateAccelerationStructureKHR>(vkGetDeviceProcAddr(device, "vkCreateAccelerationStructureKHR"));
+		vkDestroyAccelerationStructureKHR = reinterpret_cast<PFN_vkDestroyAccelerationStructureKHR>(vkGetDeviceProcAddr(device, "vkDestroyAccelerationStructureKHR"));
+		vkGetAccelerationStructureBuildSizesKHR = reinterpret_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>(vkGetDeviceProcAddr(device, "vkGetAccelerationStructureBuildSizesKHR"));
+		vkGetAccelerationStructureDeviceAddressKHR = reinterpret_cast<PFN_vkGetAccelerationStructureDeviceAddressKHR>(vkGetDeviceProcAddr(device, "vkGetAccelerationStructureDeviceAddressKHR"));
+		vkCmdTraceRaysKHR = reinterpret_cast<PFN_vkCmdTraceRaysKHR>(vkGetDeviceProcAddr(device, "vkCmdTraceRaysKHR"));
+		vkGetRayTracingShaderGroupHandlesKHR = reinterpret_cast<PFN_vkGetRayTracingShaderGroupHandlesKHR>(vkGetDeviceProcAddr(device, "vkGetRayTracingShaderGroupHandlesKHR"));
+		vkCreateRayTracingPipelinesKHR = reinterpret_cast<PFN_vkCreateRayTracingPipelinesKHR>(vkGetDeviceProcAddr(device, "vkCreateRayTracingPipelinesKHR"));
+
+		// Create the accleration structures used to render the ray traced scene
+		createBottomLevelAccelerationStructure();
+	}
+
+	/*
+		Create the bottom level acceleration structure contains the scene's actual geometry (vertices, triangles)
+	*/
+	void createBottomLevelAccelerationStructure()
+	{
+
+	}
+
+	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure,
+		VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo)
+	{
+		VkBufferCreateInfo bufferCreateInfo{};
+		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferCreateInfo.size = buildSizeInfo.accelerationStructureSize;
+		bufferCreateInfo.usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;	  // this is device address used by shader
+		VK_CHECK_RESULT(vkCreateBuffer(device,
+			&bufferCreateInfo,
+			nullptr,
+			&accelerationStructure.buffer));
+
+		// memory requirements
+		VkMemoryRequirements memoryRequirements{};
+		vkGetBufferMemoryRequirements(device, accelerationStructure.buffer, &memoryRequirements);
+
+		// allocate info
+		VkMemoryAllocateFlagsInfo memoryAllocateFlagsInfo{};
+		memoryAllocateFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+		memoryAllocateFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
+		VkMemoryAllocateInfo memoryAllocateInfo{};
+		memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		memoryAllocateInfo.pNext = &memoryAllocateFlagsInfo;
+		memoryAllocateInfo.allocationSize = memoryRequirements.size;
+		memoryAllocateInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memoryRequirements.memoryTypeBits,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, nullptr,
+			&accelerationStructure.memory));
+		VK_CHECK_RESULT(vkBindBufferMemory(device, accelerationStructure.buffer,
+			accelerationStructure.memory, 0));
+	}
+
+	/*
+	Gets the device address from a buffer that's required for some of the buffers used for ray tracing
+*/
+	uint64_t getBufferDeviceAddress(VkBuffer buffer)
+	{
+		VkBufferDeviceAddressInfoKHR bufferDeviceAI{};
+		bufferDeviceAI.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		bufferDeviceAI.buffer = buffer;
+		return vkGetBufferDeviceAddressKHR(device, &bufferDeviceAI);
+	}
+
+	std::string getPandaAssetPath()
+	{
+		return VK_PANDA_EXAMPLE_ASSETS_DIR;
+	}
+
 	virtual void render() override
 	{
 
+	}
+
+	/*
+		Create a scratch buffer to hold temporary data for a ray tracing acceleration structure
+	*/
+	RayTracingScratchBuffer createScratchBuffer(VkDeviceSize size)
+	{
+		RayTracingScratchBuffer scratchBuffer{};
+
+		VkBufferCreateInfo bufferCreateInfo{};
+		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferCreateInfo.size = size;
+		bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		VK_CHECK_RESULT(vkCreateBuffer(device, &bufferCreateInfo, nullptr, &scratchBuffer.handle));
+
+		VkMemoryRequirements memoryRequirements{};
+		vkGetBufferMemoryRequirements(device, scratchBuffer.handle, &memoryRequirements);
+
+		VkMemoryAllocateFlagsInfo memoryAllocateFlagsInfo{};
+		memoryAllocateFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+		memoryAllocateFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
+
+		VkMemoryAllocateInfo memoryAllocateInfo{};
+		memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		memoryAllocateInfo.pNext = &memoryAllocateFlagsInfo;
+		memoryAllocateInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memoryRequirements.memoryTypeBits,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &scratchBuffer.memory));
+		VK_CHECK_RESULT(vkBindBufferMemory(device, scratchBuffer.handle, scratchBuffer.memory, 0));
+
+		VkBufferDeviceAddressInfoKHR bufferDeviceAddressInfo{};
+		bufferDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		bufferDeviceAddressInfo.buffer = scratchBuffer.handle;
+		scratchBuffer.deviceAddress = vkGetBufferDeviceAddressKHR(device, &bufferDeviceAddressInfo);
+
+		return scratchBuffer;
+	}
+
+	void loadglTFFile(std::string filename)
+	{
+		tinygltf::Model glTFInput;
+		tinygltf::TinyGLTF gltfContext;
+		std::string error, warning;
+
+		bool fileLoaded = gltfContext.LoadASCIIFromFile(&glTFInput, &error, &warning, filename);
+
+		// Pass some Vulkan resources required for setup and rendering to the glTF model loading class
+		glTFScene.vulkanDevice = vulkanDevice;
+		glTFScene.copyQueue = queue;
+
+		size_t pos = filename.find_last_of('/');
+		glTFScene.path = filename.substr(0, pos);
+
+		std::vector<uint32_t> indices;
+		std::vector<VulkanglTFScene::Vertex> vertices;
+
+		if (fileLoaded)
+		{
+			glTFScene.loadImages(glTFInput);
+			glTFScene.loadMaterials(glTFInput);
+			glTFScene.loadTextures(glTFInput);
+			const tinygltf::Scene& scene = glTFInput.scenes[0];
+			for (size_t i = 0; i < scene.nodes.size(); ++i)
+			{
+				const tinygltf::Node node = glTFInput.nodes[scene.nodes[i]];
+				glTFScene.loadNode(node, glTFInput, nullptr, indexBuffer, vertexBuffer);
+			}
+		}
+		else
+		{
+			vks::tools::exitFatal("Could not open the glTF file.\n\nMake sure the assets submodule has been checked out and is up-to-date.", -1);
+			return;
+		}
+
+		/**
+		 * Create and upload vertex and index buffer
+		 * We will be using one single vertex buffer and one single index buffer for the whole GLTF scene
+		 * Primitives (of the glTF model) will then index into these using index offsets.
+		 */
+
+		size_t vertexBufferSize = vertices.size() * sizeof(VulkanglTFScene::Vertex);
+		size_t indexBufferSize = indices.size() * sizeof(uint32_t);
+		glTFScene.indices.count = static_cast<uint32_t>(indexBuffer.size());
+
+		struct StagingBuffer
+		{
+			VkBuffer buffer;
+			VkDeviceMemory memory;
+		}vertexStaging, indexStaging;
+
+		// Create buffers
+		// For the sake of simplicity we won't stage the vertex data to the GPU memory
+		// Vertex buffer
+		VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			&vertexBuffer,
+			vertexBufferSize,
+			vertices.data()
+		));
+		// Index buffer
+		VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			&indexBuffer,
+			indices.size() * sizeof(uint32_t),
+			indices.data()
+			));
+		// TODO: Transform buffer 
+		// we can user transform in gltf node, maybe.
+
+		VkDeviceOrHostAddressConstKHR vertexBufferDeviceAddress{};
+		VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
+		//VkDeviceOrHostAddressConstKHR transformBufferDeviceAddress{};
+
+		vertexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(vertexBuffer.buffer);
+		indexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(indexBuffer.buffer);
+
+		// Build
+		VkAccelerationStructureGeometryKHR accelerationStructureGeometry{};
+		accelerationStructureGeometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+		accelerationStructureGeometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+		accelerationStructureGeometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+		accelerationStructureGeometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+		accelerationStructureGeometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+		accelerationStructureGeometry.geometry.triangles.vertexData = vertexBufferDeviceAddress;
+		accelerationStructureGeometry.geometry.triangles.maxVertex = vertices.size() - 1;
+		accelerationStructureGeometry.geometry.triangles.vertexStride = sizeof(VulkanglTFScene::Vertex);
+		accelerationStructureGeometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
+		accelerationStructureGeometry.geometry.triangles.indexData = indexBufferDeviceAddress;
+		// TODO: transform
+		//accelerationStructureGeometry.geometry.triangles.transformData.deviceAddress = 0;
+		//accelerationStructureGeometry.geometry.triangles.transformData.hostAddress = nullptr;
+		//accelerationStructureGeometry.geometry.triangles.transformData = transformBufferDeviceAddress;
+
+		// Get size info
+		VkAccelerationStructureBuildGeometryInfoKHR accelerationStructureBuildGeometryInfo{};
+		accelerationStructureBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+		accelerationStructureBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+		accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+		accelerationStructureBuildGeometryInfo.geometryCount = 1;
+		accelerationStructureBuildGeometryInfo.pGeometries = &accelerationStructureGeometry;
+
+		const uint32_t numTriangles = indices.size() / 3;
+		VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
+		accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+		vkGetAccelerationStructureBuildSizesKHR(
+			device,
+			VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+			&accelerationStructureBuildGeometryInfo,
+			&numTriangles,
+			&accelerationStructureBuildSizesInfo
+		);
+
+		createAccelerationStructureBuffer(bottomLevelAS, accelerationStructureBuildSizesInfo);
+
+		VkAccelerationStructureCreateInfoKHR accelerationStructureCreateInfo{};
+		accelerationStructureCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+		accelerationStructureCreateInfo.buffer = bottomLevelAS.buffer;
+		accelerationStructureCreateInfo.size = accelerationStructureBuildSizesInfo.accelerationStructureSize;
+		accelerationStructureCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+		vkCreateAccelerationStructureKHR(device, &accelerationStructureCreateInfo, nullptr,
+			&bottomLevelAS.handle);
+
+		// Create a small scratch buffer used during build of the bottom level acceleration structure
+		RayTracingScratchBuffer scratchBuffer = createScratchBuffer(accelerationStructureBuildSizesInfo.buildScratchSize);
+
+		return;
+
+		// Create host visible staging buffers (source)
+		VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			vertexBufferSize,
+			&vertexStaging.buffer,
+			&vertexStaging.memory,
+			vertexBuffer.data()
+			));
+
+		// Index data
+		VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			indexBufferSize,
+			&indexStaging.buffer,
+			&indexStaging.memory,
+			indexBuffer.data()
+		));
+
+		// Create device local buffers (target)
+		VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			vertexBufferSize,
+			&glTFScene.vertices.buffer,
+			&glTFScene.vertices.memory
+		));
+		VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			indexBufferSize,
+			&glTFScene.indices.buffer,
+			&glTFScene.indices.memory
+		));
+
+		// Copy data from staging buffers (host) do device local buffer(gpu)
+		VkCommandBuffer copyCmd = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+		VkBufferCopy copyRegion = {};
+
+		copyRegion.size = vertexBufferSize;
+		vkCmdCopyBuffer(
+			copyCmd,
+			vertexStaging.buffer,
+			glTFScene.vertices.buffer,
+			1,
+			&copyRegion
+		);
+
+		copyRegion.size = indexBufferSize;
+		vkCmdCopyBuffer(
+			copyCmd,
+			indexStaging.buffer,
+			glTFScene.indices.buffer,
+			1,
+			&copyRegion
+		);
+
+		vulkanDevice->flushCommandBuffer(copyCmd, queue, true);
+
+		// Free staging resources
+		vkDestroyBuffer(device, vertexStaging.buffer, nullptr);
+		vkFreeMemory(device, vertexStaging.memory, nullptr);
+		vkDestroyBuffer(device, indexStaging.buffer, nullptr);
+		vkFreeMemory(device, indexStaging.memory, nullptr);
 	}
 };
 
