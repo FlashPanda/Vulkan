@@ -446,6 +446,14 @@ public:
 		glm::mat4 projInverse;
 	} uniformData;
 	vks::Buffer ubo;
+
+	VkPipeline pipeline;
+	VkPipelineLayout pipelineLayout;
+	VkDescriptorSet descriptorSet;
+	VkDescriptorSetLayout descriptorSetLayout;
+
+	std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups{};
+
 	VulkanExample() : VulkanExampleBase()
 	{
 
@@ -492,6 +500,72 @@ public:
 		createTopLevelAccelerationStructure();
 
 		createStorageImage();
+		createUniformBuffer();
+		createRayTracingPipeline();
+
+	}
+
+	// Create our ray tracing pipeline
+	void createRayTracingPipeline()
+	{
+		VkDescriptorSetLayoutBinding accelerationStructureLayoutBinding{};
+		accelerationStructureLayoutBinding.binding = 0;
+		accelerationStructureLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+		accelerationStructureLayoutBinding.descriptorCount = 1;
+		accelerationStructureLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+		VkDescriptorSetLayoutBinding resultImageLayoutBinding{};
+		resultImageLayoutBinding.binding = 1;
+		resultImageLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		resultImageLayoutBinding.descriptorCount = 1;
+		resultImageLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+		VkDescriptorSetLayoutBinding uniformBufferBinding{};
+		uniformBufferBinding.binding = 2;
+		uniformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		uniformBufferBinding.descriptorCount = 1;
+		uniformBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+		std::vector<VkDescriptorSetLayoutBinding> bindings(
+			{
+				accelerationStructureLayoutBinding,
+				resultImageLayoutBinding,
+				uniformBufferBinding
+			}
+		);
+
+		VkDescriptorSetLayoutCreateInfo descriptorSetlayoutCI{};
+		descriptorSetlayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		descriptorSetlayoutCI.bindingCount = static_cast<uint32_t>(bindings.size());
+		descriptorSetlayoutCI.pBindings = bindings.data();
+		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetlayoutCI, nullptr, &descriptorSetLayout));
+
+		VkPipelineLayoutCreateInfo pipelineLayoutCI{};
+		pipelineLayoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipelineLayoutCI.setLayoutCount = 1;
+		pipelineLayoutCI.pSetLayouts = &descriptorSetLayout;
+		VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayout));
+
+		// Setup ray tracing shader groups
+		std::vector< VkPipelineShaderStageCreateInfo> shaderStages;
+
+		// Ray generation group
+		{
+			shaderStages.push_back(loadShader(getShadersPath() + "raytracingbasic/raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
+			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+			shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+			shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			shaderGroups.push_back(shaderGroup);
+		}
+
+		// Miss group
+		{
+
+		}
 	}
 
 	/*
@@ -818,6 +892,16 @@ public:
 			&accelerationDeviceAddressInfo);
 
 		deleteScratchBuffer(scratchBuffer);
+	}
+
+	void deleteScratchBuffer(RayTracingScratchBuffer& scratchBuffer)
+	{
+		if (scratchBuffer.memory != VK_NULL_HANDLE) {
+			vkFreeMemory(device, scratchBuffer.memory, nullptr);
+		}
+		if (scratchBuffer.handle != VK_NULL_HANDLE) {
+			vkDestroyBuffer(device, scratchBuffer.handle, nullptr);
+		}
 	}
 
 	void createAccelerationStructureBuffer(AccelerationStructure& accelerationStructure,
