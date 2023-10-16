@@ -460,18 +460,59 @@ public:
 
 	VulkanExample() : VulkanExampleBase()
 	{
+		title = "Ray tracing panda ^_^";
+		settings.overlay = false;
+		camera.type = Camera::CameraType::lookat;
+		camera.setPerspective(60.f, (float)width / (float)height, 0.1f, 512.f);
+		camera.setRotation(glm::vec3(0.f, 0.f, 0.f));
+		camera.setTranslation(glm::vec3(0.f, 0.f, -2.5));
 
+		// Require Vulkan 1.1
+		apiVersion = VK_API_VERSION_1_1;
+
+		// Ray tracing related extensions required by this sample
+		enabledDeviceExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+		enabledDeviceExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+
+		// Required by VK_KHR_acceleration_struture
+		enabledDeviceExtensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+		enabledDeviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+		enabledDeviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+
+		// Required for VK_KHR_ray_tracing_pipeline
+		enabledDeviceExtensions.push_back(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
+
+		// Required by VK_KHR_spirv_1_4
+		enabledDeviceExtensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
 	}
 	~VulkanExample()
 	{
-
+		vkDestroyPipeline(device, pipeline, nullptr);
+		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+		vkDestroyImageView(device, storageImage.view, nullptr);
+		vkDestroyImage(device, storageImage.image, nullptr);
+		vkFreeMemory(device, storageImage.memory, nullptr);
+		vkFreeMemory(device, bottomLevelAS.memory, nullptr);
+		vkDestroyBuffer(device, bottomLevelAS.buffer, nullptr);
+		vkDestroyAccelerationStructureKHR(device, bottomLevelAS.handle, nullptr);
+		vkFreeMemory(device, topLevelAS.memory, nullptr);
+		vkDestroyBuffer(device, topLevelAS.buffer, nullptr);
+		vkDestroyAccelerationStructureKHR(device, topLevelAS.handle, nullptr);
+		vertexBuffer.destroy();
+		indexBuffer.destroy();
+		transformBuffer.destroy();
+		raygenShaderBindingTable.destroy();
+		missShaderBindingTable.destroy();
+		hitShaderBindingTable.destroy();
+		ubo.destroy();
 	}
 
 	void prepare()
 	{
 		VulkanExampleBase::prepare();
 
-		loadglTFFile(getPandaAssetPath() + "cornell_box/scene.gltf");
+		//loadglTFFile(getPandaAssetPath() + "cornell_box/scene.gltf");
 
 		// Get ray tracing pipeline properties, which will be used later on in the sample
 		rayTracingPipelineProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
@@ -510,6 +551,15 @@ public:
 		createDescriptorSets();
 		buildCommandBuffers();
 		prepared = true;
+	}
+
+	void draw()
+	{
+		VulkanExampleBase::prepareFrame();
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &drawCmdBuffers[currentBuffer];
+		VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+		VulkanExampleBase::submitFrame();
 	}
 
 	// command buffer generation
@@ -1235,7 +1285,15 @@ public:
 
 	virtual void render() override
 	{
+		if (!prepared)
+		{
+			return;
+		}
 
+		draw();
+
+		if (camera.updated)
+			updateUniformBuffers();
 	}
 
 	/*
@@ -1261,6 +1319,7 @@ public:
 		VkMemoryAllocateInfo memoryAllocateInfo{};
 		memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		memoryAllocateInfo.pNext = &memoryAllocateFlagsInfo;
+		memoryAllocateInfo.allocationSize = memoryRequirements.size;
 		memoryAllocateInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memoryRequirements.memoryTypeBits,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		VK_CHECK_RESULT(vkAllocateMemory(device, &memoryAllocateInfo, nullptr, &scratchBuffer.memory));
