@@ -508,7 +508,16 @@ public:
 		createRayTracingPipeline();
 		createShaderBindingTable();
 		createDescriptorSets();
+		buildCommandBuffers();
+	}
 
+	// command buffer generation
+	void buildCommandBuffers()
+	{
+		if (resized)
+		{
+			handleResize();
+		}
 	}
 
 	// Create the descriptor sets used for the ray tracing dispatch
@@ -528,6 +537,45 @@ public:
 
 		// bind the acceleration structure to descriptor set
 		VkWriteDescriptorSetAccelerationStructureKHR descriptorAccelerationStructureInfo{};
+		descriptorAccelerationStructureInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+		descriptorAccelerationStructureInfo.accelerationStructureCount = 1;
+		descriptorAccelerationStructureInfo.pAccelerationStructures = &topLevelAS.handle;
+
+		VkWriteDescriptorSet accelerationStructureWrite{};
+		accelerationStructureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		// The specialized accelrattion structure descriptor has to be chained.
+		accelerationStructureWrite.pNext = &descriptorAccelerationStructureInfo;
+		accelerationStructureWrite.dstSet = descriptorSet;
+		accelerationStructureWrite.dstBinding = 0;
+		accelerationStructureWrite.descriptorCount = 1;
+		accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+
+		VkDescriptorImageInfo storageImageDescriptor{};
+		storageImageDescriptor.imageView = storageImage.view;
+		storageImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+		VkWriteDescriptorSet resultImageWrite = vks::initializers::writeDescriptorSet(
+			descriptorSet,
+			VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, &storageImageDescriptor
+			);
+		VkWriteDescriptorSet uniformBufferWrite = vks::initializers::writeDescriptorSet(
+			descriptorSet,
+			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			2,
+			ubo.descriptor
+		);
+
+		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
+			accelerationStructureWrite,
+			resultImageWrite,
+			uniformBufferWrite
+		};
+
+		vkUpdateDescriptorSets(device,
+			static_cast<>(uint32_t)(writeDescriptorSets.size()),
+			writeDescriptorSets.data(),
+			0,
+			VK_NULL_HANDLE);
 	}
 
 	/*
