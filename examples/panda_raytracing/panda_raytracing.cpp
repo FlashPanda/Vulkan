@@ -848,7 +848,7 @@ public:
 
 		// Ray generation group
 		{
-			shaderStages.push_back(loadShader(getShadersPath() + "raytracingbasic/raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
+			shaderStages.push_back(loadShader(getShadersPath() + "pandaraytracing/raygen.rgen.spv", VK_SHADER_STAGE_RAYGEN_BIT_KHR));
 			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
@@ -861,7 +861,7 @@ public:
 
 		// Miss group
 		{
-			shaderStages.push_back(loadShader(getShadersPath() + "raytracingbasic/miss.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
+			shaderStages.push_back(loadShader(getShadersPath() + "pandaraytracing/miss.rmiss.spv", VK_SHADER_STAGE_MISS_BIT_KHR));
 			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;	
@@ -874,7 +874,7 @@ public:
 
 		// Closest hit group
 		{
-			shaderStages.push_back(loadShader(getShadersPath() + "raytracingbasic/closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
+			shaderStages.push_back(loadShader(getShadersPath() + "pandaraytracing/closesthit.rchit.spv", VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR));
 			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
