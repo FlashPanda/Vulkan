@@ -509,6 +509,7 @@ public:
 		createShaderBindingTable();
 		createDescriptorSets();
 		buildCommandBuffers();
+		prepared = true;
 	}
 
 	// command buffer generation
@@ -518,6 +519,140 @@ public:
 		{
 			handleResize();
 		}
+
+		VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
+
+		VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+		for (int32_t i = 0; i < drawCmdBuffers.size(); ++i)
+		{
+			VK_CHECK_RESULT(vkBeginCommandBuffer(drawCmdBuffers[i], &cmdBufInfo));
+
+			// Setup the buffer regions pointing to the shaders in our shader binding table
+
+			const uint32_t handleSizeAligned = vks::tools::alignedSize(
+				rayTracingPipelineProperties.shaderGroupHandleSize,
+				rayTracingPipelineProperties.shaderGroupHandleAlignment
+			);
+
+			VkStridedDeviceAddressRegionKHR raygenShaderSbtEntry{};
+			raygenShaderSbtEntry.deviceAddress = getBufferDeviceAddress(raygenShaderBindingTable.buffer);
+			raygenShaderSbtEntry.stride = handleSizeAligned;
+			raygenShaderSbtEntry.size = handleSizeAligned;
+
+			VkStridedDeviceAddressRegionKHR missShaderSbtEntry{};
+			missShaderSbtEntry.deviceAddress = getBufferDeviceAddress(missShaderBindingTable.buffer);
+			missShaderSbtEntry.stride = handleSizeAligned;
+			missShaderSbtEntry.size = handleSizeAligned;
+
+			VkStridedDeviceAddressRegionKHR hitShaderSbtEntry{};
+			hitShaderSbtEntry.deviceAddress = getBufferDeviceAddress(hitShaderBindingTable.buffer);
+			hitShaderSbtEntry.stride = handleSizeAligned;
+			hitShaderSbtEntry.size = handleSizeAligned;
+
+			VkStridedDeviceAddressRegionKHR callableShaderSbtEntry{};
+
+			// Dispatch the ray tracing commands
+			vkCmdBindPipeline(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline);
+			vkCmdBindDescriptorSets(drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipelineLayout, 0, 1, &descriptorSet, 0, 0);
+		
+			vkCmdTraceRaysKHR(
+				drawCmdBuffers[i],
+				&raygenShaderSbtEntry,
+				&missShaderSbtEntry,
+				&hitShaderSbtEntry,
+				&callableShaderSbtEntry,
+				width,
+				height,
+				1);
+
+			/*
+				Copy ray tracing output to swap chain image
+			*/
+
+			// Prepare current swap chain image as transfer destination
+			vks::tools::setImageLayout(
+				drawCmdBuffers[i],
+				swapChain.images[i],
+				VK_IMAGE_LAYOUT_UNDEFINED,
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				subresourceRange
+			);
+
+			// Prepare ray tracing output image as transfer source
+			vks::tools::setImageLayout(
+				drawCmdBuffers[i],
+				storageImage.image,
+				VK_IMAGE_LAYOUT_GENERAL,
+				VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				subresourceRange
+			);
+
+			VkImageCopy copyRegion{};
+			copyRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+			copyRegion.srcOffset = { 0, 0, 0 };
+			copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+			copyRegion.dstOffset = { 0, 0, 0 };
+			copyRegion.extent = { width, height, 1 };
+			vkCmdCopyImage(
+				drawCmdBuffers[i],
+				storageImage.image,
+				VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				swapChain.images[i],
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				1,
+				&copyRegion
+			);
+
+			// Transition swap chain image back for presentation
+			vks::tools::setImageLayout(
+				drawCmdBuffers[i],
+				swapChain.images[i],
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+				subresourceRange
+			);
+
+			// Transition ray tracing output image back to general layout
+			vks::tools::setImageLayout(
+				drawCmdBuffers[i],
+				storageImage.image,
+				VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				VK_IMAGE_LAYOUT_GENERAL,
+				subresourceRange
+			);
+
+			VK_CHECK_RESULT(vkEndCommandBuffer(drawCmdBuffers[i]));
+		}
+	}
+
+	/*
+	* If the window has been resized, we need to recreate the storage image and it's descriptor
+	*/
+	void handleResize()
+	{
+		// Delete allocated resources
+		vkDestroyImageView(device, storageImage.view, nullptr);
+		vkDestroyImage(device, storageImage.image, nullptr);
+		vkFreeMemory(device, storageImage.memory, nullptr);
+		// Recreate image
+		createStorageImage();
+
+		// Update descriptor
+		VkDescriptorImageInfo storageImageDescriptor{
+			VK_NULL_HANDLE,
+			storageImage.view,
+			VK_IMAGE_LAYOUT_GENERAL
+		};
+		VkWriteDescriptorSet resultImageWrite = vks::initializers::writeDescriptorSet(
+			descriptorSet,
+			VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+			1,
+			&storageImageDescriptor
+			);
+
+		vkUpdateDescriptorSets(device, 1, &resultImageWrite, 0, VK_NULL_HANDLE);
+		resized = false;
 	}
 
 	// Create the descriptor sets used for the ray tracing dispatch
@@ -562,7 +697,7 @@ public:
 			descriptorSet,
 			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
 			2,
-			ubo.descriptor
+			&ubo.descriptor
 		);
 
 		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
@@ -572,7 +707,7 @@ public:
 		};
 
 		vkUpdateDescriptorSets(device,
-			static_cast<>(uint32_t)(writeDescriptorSets.size()),
+			static_cast<uint32_t>(writeDescriptorSets.size()),
 			writeDescriptorSets.data(),
 			0,
 			VK_NULL_HANDLE);
@@ -1166,7 +1301,7 @@ public:
 			for (size_t i = 0; i < scene.nodes.size(); ++i)
 			{
 				const tinygltf::Node node = glTFInput.nodes[scene.nodes[i]];
-				glTFScene.loadNode(node, glTFInput, nullptr, indexBuffer, vertexBuffer);
+				//glTFScene.loadNode(node, glTFInput, nullptr, indexBuffer, vertexBuffer);
 			}
 		}
 		else
@@ -1183,7 +1318,7 @@ public:
 
 		size_t vertexBufferSize = vertices.size() * sizeof(VulkanglTFScene::Vertex);
 		size_t indexBufferSize = indices.size() * sizeof(uint32_t);
-		glTFScene.indices.count = static_cast<uint32_t>(indexBuffer.size());
+		//glTFScene.indices.count = static_cast<uint32_t>(indexBuffer.size());
 
 		struct StagingBuffer
 		{
