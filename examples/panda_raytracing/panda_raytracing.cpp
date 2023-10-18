@@ -138,8 +138,8 @@ VulkanglTFScene::~VulkanglTFScene()
 		delete node;
 	}
 	// Release all Vulkan resources allocated for the model
-	vkDestroyBuffer(vulkanDevice->logicalDevice, vertices.buffer, nullptr);
-	vkFreeMemory(vulkanDevice->logicalDevice, vertices.memory, nullptr);
+	//vkDestroyBuffer(vulkanDevice->logicalDevice, vertices.buffer, nullptr);
+	//vkFreeMemory(vulkanDevice->logicalDevice, vertices.memory, nullptr);
 	vkDestroyBuffer(vulkanDevice->logicalDevice, indices.buffer, nullptr);
 	vkFreeMemory(vulkanDevice->logicalDevice, indices.memory, nullptr);
 	for (Image image : images) {
@@ -1092,18 +1092,27 @@ public:
 	void createBottomLevelAccelerationStructure()
 	{
 		// Setup vertices for a single triangle
-		struct Vertex {
-			float pos[3];
-		};
-		std::vector<Vertex> vertices = {
-			{ {  1.0f,  1.0f, 0.0f } },
-			{ { -1.0f,  1.0f, 0.0f } },
-			{ {  0.0f, -1.0f, 0.0f } }
-		};
+		//struct VertexTemp {
+		//	glm::vec3 pos;
+
+		//	VertexTemp(const glm::vec3 _pos) :
+		//		pos(_pos) {}
+		//};
+		//std::vector< VertexTemp> vertices;
+		//for (int32_t i = 0; i < glTFScene.vertexBuffer.size(); ++i)
+		//{
+		//	vertices.push_back(VertexTemp(glTFScene.vertexBuffer[i].pos));
+		//}
+		
+		//std::vector<Vertex> vertices = {
+		//	{ {  1.0f,  1.0f, 0.0f } },
+		//	{ { -1.0f,  1.0f, 0.0f } },
+		//	{ {  0.0f, -1.0f, 0.0f } }
+		//};
 
 		// Setup indices
-		std::vector<uint32_t> indices = { 0, 1, 2 };
-		indexCount = static_cast<uint32_t>(indices.size());
+		//std::vector<uint32_t> indices = { 0, 1, 2 };
+		indexCount = static_cast<uint32_t>(glTFScene.indexBuffer.size());
 
 		// Setup identity transform matrix
 		VkTransformMatrixKHR transformMatrix = {
@@ -1119,15 +1128,15 @@ public:
 			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			&vertexBuffer,
-			vertices.size() * sizeof(Vertex),
-			vertices.data()));
+			glTFScene.vertexBuffer.size() * sizeof(VulkanglTFScene::Vertex),
+			glTFScene.vertexBuffer.data()));
 		// Index buffer
 		VK_CHECK_RESULT(vulkanDevice->createBuffer(
 			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			&indexBuffer,
-			indices.size() * sizeof(uint32_t),
-			indices.data()));
+			glTFScene.indexBuffer.size() * sizeof(uint32_t),
+			glTFScene.indexBuffer.data()));
 		// Transform buffer
 		VK_CHECK_RESULT(vulkanDevice->createBuffer(
 			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
@@ -1153,8 +1162,8 @@ public:
 		accelerationStructureGeometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
 		accelerationStructureGeometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
 		accelerationStructureGeometry.geometry.triangles.vertexData = vertexBufferDeviceAddress;
-		accelerationStructureGeometry.geometry.triangles.maxVertex = 2;
-		accelerationStructureGeometry.geometry.triangles.vertexStride = sizeof(Vertex);
+		accelerationStructureGeometry.geometry.triangles.maxVertex = glTFScene.vertexBuffer.size() - 1; // Useless no matter set to 2 or glTFScene.vertexBuffer.size() - 1
+		accelerationStructureGeometry.geometry.triangles.vertexStride = sizeof(VulkanglTFScene::Vertex);
 		accelerationStructureGeometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
 		accelerationStructureGeometry.geometry.triangles.indexData = indexBufferDeviceAddress;
 		accelerationStructureGeometry.geometry.triangles.transformData.deviceAddress = 0;
@@ -1169,7 +1178,7 @@ public:
 		accelerationStructureBuildGeometryInfo.geometryCount = 1;
 		accelerationStructureBuildGeometryInfo.pGeometries = &accelerationStructureGeometry;
 
-		const uint32_t numTriangles = 1;
+		const uint32_t numTriangles = glTFScene.indexBuffer.size() / 3;	// If we set this to 1, we can only draw 1 triangle.
 		VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
 		accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
 		vkGetAccelerationStructureBuildSizesKHR(
