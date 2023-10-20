@@ -448,6 +448,7 @@ public:
 	struct UniformData {
 		glm::mat4 viewInverse;
 		glm::mat4 projInverse;
+		int32_t vertexSize;
 	} uniformData;
 	vks::Buffer ubo;
 
@@ -923,6 +924,9 @@ public:
 	{
 		uniformData.projInverse = glm::inverse(camera.matrices.perspective);
 		uniformData.viewInverse = glm::inverse(camera.matrices.view);
+		// Pass the vertex size to the shader for unpacking vertices
+		uniformData.vertexSize = sizeof(VulkanglTFScene::Vertex);
+
 		memcpy(ubo.mapped, &uniformData, sizeof(uniformData));
 	}
 
@@ -1178,7 +1182,7 @@ public:
 		accelerationStructureBuildGeometryInfo.geometryCount = 1;
 		accelerationStructureBuildGeometryInfo.pGeometries = &accelerationStructureGeometry;
 
-		const uint32_t numTriangles = glTFScene.indexBuffer.size() / 3;	// If we set this to 1, we can only draw 1 triangle.
+		const uint32_t numTriangles = 9;//32 glTFScene.indexBuffer.size() / 3;	// If we set this to 1, we can only draw 1 triangle.
 		VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
 		accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
 		vkGetAccelerationStructureBuildSizesKHR(
