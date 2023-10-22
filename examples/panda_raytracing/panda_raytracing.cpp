@@ -34,6 +34,7 @@ public:
 		glm::vec2 uv;
 		glm::vec3 color;
 		glm::vec4 tangent;
+		float pad;	// for alignment. now that it is total 64 bites.
 	};
 
 	std::vector<Vertex> vertexBuffer;
@@ -716,7 +717,8 @@ public:
 		std::vector<VkDescriptorPoolSize> poolSizes = {
 			{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
 			{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
-			{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1}
+			{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
+			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 }
 		};
 
 		VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = vks::initializers::descriptorPoolCreateInfo(poolSizes, 1);
@@ -744,6 +746,10 @@ public:
 		storageImageDescriptor.imageView = storageImage.view;
 		storageImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
+		VkDescriptorBufferInfo vertexBufferDescriptor{ glTFScene.vertices.buffer , 0, VK_WHOLE_SIZE };
+		VkDescriptorBufferInfo indexBufferDescriptor{ glTFScene.indices.buffer, 0, VK_WHOLE_SIZE };
+		
+
 		VkWriteDescriptorSet resultImageWrite = vks::initializers::writeDescriptorSet(
 			descriptorSet,
 			VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, &storageImageDescriptor
@@ -756,9 +762,16 @@ public:
 		);
 
 		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
+			// Binding 0: Top level acceleration structure
 			accelerationStructureWrite,
+			// Binding 1: Ray tracing result image
 			resultImageWrite,
-			uniformBufferWrite
+			// Binding 2: Uniform data
+			uniformBufferWrite,
+			// Binding 3: scene vertex buffer
+			vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3, &vertexBufferDescriptor),
+			// BInding 4: scene index buffer
+			vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4, &indexBufferDescriptor),
 		};
 
 		vkUpdateDescriptorSets(device,
