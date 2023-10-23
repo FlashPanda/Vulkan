@@ -843,9 +843,16 @@ public:
 
 		std::vector<VkDescriptorSetLayoutBinding> bindings(
 			{
+				// Binding 0: Acceleration structure
 				accelerationStructureLayoutBinding,
+				// Binding 1: Storage image
 				resultImageLayoutBinding,
-				uniformBufferBinding
+				// Binding 2: Uniform buffer
+				uniformBufferBinding,
+				// Binding 3: Vertex buffer
+				vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 3),
+				// Binding 4: Index buffer
+				vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 4)
 			}
 		);
 
