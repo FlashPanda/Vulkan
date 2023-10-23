@@ -746,8 +746,8 @@ public:
 		storageImageDescriptor.imageView = storageImage.view;
 		storageImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-		VkDescriptorBufferInfo vertexBufferDescriptor{ glTFScene.vertices.buffer , 0, VK_WHOLE_SIZE };
-		VkDescriptorBufferInfo indexBufferDescriptor{ glTFScene.indices.buffer, 0, VK_WHOLE_SIZE };
+		VkDescriptorBufferInfo vertexBufferDescriptor{ vertexBuffer.buffer , 0, VK_WHOLE_SIZE };
+		VkDescriptorBufferInfo indexBufferDescriptor{ indexBuffer.buffer, 0, VK_WHOLE_SIZE };
 		
 
 		VkWriteDescriptorSet resultImageWrite = vks::initializers::writeDescriptorSet(
