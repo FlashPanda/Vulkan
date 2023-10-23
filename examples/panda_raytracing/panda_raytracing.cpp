@@ -1179,7 +1179,7 @@ public:
 		accelerationStructureGeometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
 		accelerationStructureGeometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
 		accelerationStructureGeometry.geometry.triangles.vertexData = vertexBufferDeviceAddress;
-		accelerationStructureGeometry.geometry.triangles.maxVertex = glTFScene.vertexBuffer.size() - 1; // Useless no matter set to 2 or glTFScene.vertexBuffer.size() - 1
+		accelerationStructureGeometry.geometry.triangles.maxVertex = static_cast<uint32_t>(glTFScene.vertexBuffer.size() - 1); // Useless no matter set to 2 or glTFScene.vertexBuffer.size() - 1
 		accelerationStructureGeometry.geometry.triangles.vertexStride = sizeof(VulkanglTFScene::Vertex);
 		accelerationStructureGeometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
 		accelerationStructureGeometry.geometry.triangles.indexData = indexBufferDeviceAddress;

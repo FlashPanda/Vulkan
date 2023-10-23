@@ -1,0 +1,1 @@
+glslangValidator --target-env vulkan1.2 -V closesthit.rchit -o closesthit.rchit.spv
