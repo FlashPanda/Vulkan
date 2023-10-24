@@ -151,5 +151,6 @@ void main()
 	color = pow(color, vec3(1.0 / 2.2));
 	
 	//hitValue = barycentricCoords;
-	hitValue = color;
+	//hitValue = color;
+	hitValue = vec3(attribs.x, attribs.y, 0.0);
 }
