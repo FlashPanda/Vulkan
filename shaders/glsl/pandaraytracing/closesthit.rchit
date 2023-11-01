@@ -98,7 +98,7 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
 void main()
 {
 	// world position of light
-	vec3 lightPos = vec3(-0.005, 0.04, 1.98);
+	vec3 lightPos = vec3(-0.005, 0.04, 1.2);
 	
 	ivec3 index = ivec3(indices.i[3 * gl_PrimitiveID], indices.i[3 * gl_PrimitiveID + 1], indices.i[3 * gl_PrimitiveID + 2]);
 	
@@ -111,24 +111,26 @@ void main()
 	// Interpolate normal
 	const vec3 barycentricCoords = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
 	vec3 normal = normalize(v0.normal * barycentricCoords.x + v1.normal * barycentricCoords.y + v2.normal * barycentricCoords.z);
+	vec3 hitPos = v0.pos * barycentricCoords.x + v1.pos * barycentricCoords.y + v2.pos * barycentricCoords.z;
+	vec3 hitPos_world = vec3(gl_ObjectToWorldEXT * vec4(hitPos, 1.0));
 	
 	// pbr rendering
 	vec3 N = normal;
-	vec3 V = normalize((ubo.viewInverse * vec4(0,0,0,1)).xyz - hitValue);
+	vec3 V = normalize((ubo.viewInverse * vec4(0,0,0,1)).xyz - hitPos_world);
 	
 	// light
-	float intensity = 10000;
+	float intensity = 10;
 	vec4 lightColor = vec4(1, 1, 1, 1);
-	vec3 L = normalize(lightPos - hitValue);
+	vec3 L = normalize(lightPos - hitPos_world);
 	vec3 H = normalize( V + L);
 	float NDotL = max(dot(N, L), 0.0);
 	
-	float distance = length(lightPos  - hitValue);
+	float distance = length(lightPos  - hitPos_world);
 	float attenuation = 1.0 / ((0.6 * distance * distance) + 1.0);
 	vec3 radiance = lightColor.xyz * intensity * attenuation;
 	
 	vec3 albedo = vec3(0.5, 0.5, 0.5);
-	float metallic = 0.8;
+	float metallic = 0.1;
 	float roughness = 0.4;
 	
 	vec3 F0 = vec3(0.04);
@@ -150,7 +152,5 @@ void main()
 	vec3 color = Lo;
 	color = pow(color, vec3(1.0 / 2.2));
 	
-	//hitValue = barycentricCoords;
-	//hitValue = color;
-	hitValue = vec3(attribs.x, attribs.y, 0.0);
+	hitValue = color;
 }
