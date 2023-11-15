@@ -16,6 +16,7 @@
 
 #include "tiny_gltf.h"
 #include "VulkanRaytracingSample.h"
+#include <fstream>
 
 
 // Contains everything required to render a basic glTF scene in Vulkan
@@ -37,22 +38,28 @@ public:
 		float pad;	// for alignment. now that it is total 64 bytes.
 	};
 
-	std::vector<Vertex> vertexBuffer;
+	std::vector<Vertex> vertices;
 
-	std::vector<uint32_t> indexBuffer;
+	std::vector<uint32_t> indices;
 
 	// Single vertex buffer for all primitives
 	struct {
 		VkBuffer buffer;
 		VkDeviceMemory memory;
-	} vertices;
+	} vertexBuffer;
 
 	// Single index buffer for all primitives
 	struct {
 		int count;
 		VkBuffer buffer;
 		VkDeviceMemory memory;
-	} indices;
+	} indexBuffer;
+
+	// material buffer
+	struct {
+		VkBuffer buffer;
+		VkDeviceMemory memory;
+	} materialBuffer;
 
 	// The following structures roughly represent the glTF scene structure
 	// To keep things simple, they only contain those properties that are required for this sample
@@ -93,8 +100,20 @@ public:
 		std::string alphaMode = "OPAQUE";
 		float alphaCutOff;
 		bool doubleSided = false;
+		float         metallicFactor{ 1.f };
+		float         roughnessFactor{ 1.f };
 		VkDescriptorSet descriptorSet;
 		VkPipeline pipeline;
+	};
+
+	// material structure used in shaders
+	struct ShadeMaterial
+	{
+		glm::vec4		baseColorFactor = glm::vec4(1.0f);
+		uint32_t		baseColorTextureIndex;
+		float			metallicFactor{ 1.f };
+		float			roughnessFactor{ 1.f };
+		float			pad;	// ²¹×ã¶ÔÆëÓÃ
 	};
 
 	// Contains the texture for a single glTF image
@@ -200,6 +219,8 @@ void VulkanglTFScene::loadMaterials(tinygltf::Model& input)
 		materials[i].alphaMode = glTFMaterial.alphaMode;
 		materials[i].alphaCutOff = (float)glTFMaterial.alphaCutoff;
 		materials[i].doubleSided = glTFMaterial.doubleSided;
+		materials[i].metallicFactor = glTFMaterial.pbrMetallicRoughness.metallicFactor;
+		materials[i].roughnessFactor = glTFMaterial.pbrMetallicRoughness.roughnessFactor;
 	}
 }
 
@@ -387,8 +408,8 @@ void VulkanglTFScene::draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipel
 {
 	// All vertices and indices are stored in single buffers, so we only need to bind once
 	VkDeviceSize offsets[1] = { 0 };
-	vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertices.buffer, offsets);
-	vkCmdBindIndexBuffer(commandBuffer, indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+	vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer.buffer, offsets);
+	vkCmdBindIndexBuffer(commandBuffer, indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 	// Render all nodes at top-level
 	for (auto& node : nodes) {
 		drawNode(commandBuffer, pipelineLayout, node);
@@ -466,7 +487,7 @@ public:
 	{
 		VulkanRaytracingSample::prepare();
 
-		loadglTFFile(getPandaAssetPath() + "cornell_box/scene.gltf");
+		loadglTFFile(getPandaAssetPath() + "cornell_box/cornellBox.gltf");
 
 		// Create the accleration structures used to render the ray traced scene
 		createBottomLevelAccelerationStructure();
@@ -629,8 +650,8 @@ public:
 		accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 
 		VkDescriptorImageInfo storageImageDescriptor{ VK_NULL_HANDLE, storageImage.view, VK_IMAGE_LAYOUT_GENERAL };
-		VkDescriptorBufferInfo vertexBufferDescriptor{ glTFScene.vertices.buffer, 0, VK_WHOLE_SIZE };
-		VkDescriptorBufferInfo indexBufferDescriptor{ glTFScene.indices.buffer, 0, VK_WHOLE_SIZE };
+		VkDescriptorBufferInfo vertexBufferDescriptor{ glTFScene.vertexBuffer.buffer, 0, VK_WHOLE_SIZE };
+		VkDescriptorBufferInfo indexBufferDescriptor{ glTFScene.indexBuffer.buffer, 0, VK_WHOLE_SIZE };
 
 		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 			// Binding 0: Top level acceleration structure
@@ -897,10 +918,10 @@ public:
 		VkDeviceOrHostAddressConstKHR vertexBufferDeviceAddress{};
 		VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
 
-		vertexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(glTFScene.vertices.buffer);
-		indexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(glTFScene.indices.buffer);
+		vertexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(glTFScene.vertexBuffer.buffer);
+		indexBufferDeviceAddress.deviceAddress = getBufferDeviceAddress(glTFScene.indexBuffer.buffer);
 
-		const uint32_t numTriangles = static_cast<uint32_t>(glTFScene.indexBuffer.size() / 3);	// If we set this to 1, we can only draw 1 triangle.
+		const uint32_t numTriangles = static_cast<uint32_t>(glTFScene.indices.size() / 3);	// If we set this to 1, we can only draw 1 triangle.
 
 		// Geometry info
 		VkAccelerationStructureGeometryKHR accelerationStructureGeometry = vks::initializers::accelerationStructureGeometryKHR();
@@ -909,7 +930,7 @@ public:
 		accelerationStructureGeometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
 		accelerationStructureGeometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
 		accelerationStructureGeometry.geometry.triangles.vertexData = vertexBufferDeviceAddress;
-		accelerationStructureGeometry.geometry.triangles.maxVertex = static_cast<uint32_t>(glTFScene.vertexBuffer.size() - 1); // Useless no matter set to 2 or glTFScene.vertexBuffer.size() - 1
+		accelerationStructureGeometry.geometry.triangles.maxVertex = static_cast<uint32_t>(glTFScene.vertices.size() - 1); // Useless no matter set to 2 or glTFScene.vertexBuffer.size() - 1
 		accelerationStructureGeometry.geometry.triangles.vertexStride = sizeof(VulkanglTFScene::Vertex);
 		accelerationStructureGeometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
 		accelerationStructureGeometry.geometry.triangles.indexData = indexBufferDeviceAddress;
@@ -1099,7 +1120,7 @@ public:
 			for (size_t i = 0; i < scene.nodes.size(); ++i)
 			{
 				const tinygltf::Node node = glTFInput.nodes[scene.nodes[i]];
-				glTFScene.loadNode(node, glTFInput, nullptr, glTFScene.indexBuffer, glTFScene.vertexBuffer);
+				glTFScene.loadNode(node, glTFInput, nullptr, glTFScene.indices, glTFScene.vertices);
 			}
 		}
 		else
@@ -1111,15 +1132,29 @@ public:
 		// Create and upload vertex and index buffer
 		// We will be using one single vertex buffer and one single index buffer for the whole glTF scene
 		// Primitives (of the glTF model) will then index into these using index offsets
-		size_t vertexBufferSize = glTFScene.vertexBuffer.size() * sizeof(VulkanglTFScene::Vertex);
-		size_t indexBufferSize = glTFScene.indexBuffer.size() * sizeof(uint32_t);
-		glTFScene.indices.count = static_cast<uint32_t>(glTFScene.indexBuffer.size());
+		size_t vertexBufferSize = glTFScene.vertices.size() * sizeof(VulkanglTFScene::Vertex);
+		size_t indexBufferSize = glTFScene.indices.size() * sizeof(uint32_t);
+		glTFScene.indexBuffer.count = static_cast<uint32_t>(glTFScene.indices.size());
+		
+		std::vector<VulkanglTFScene::ShadeMaterial> shaderMaterials;
+		for (int32_t i = 0; i < glTFScene.materials.size(); ++i)
+		{
+			VulkanglTFScene::ShadeMaterial material;
+			material.baseColorFactor = glTFScene.materials[i].baseColorFactor;
+			material.baseColorTextureIndex = glTFScene.materials[i].baseColorTextureIndex;
+			material.metallicFactor = glTFScene.materials[i].metallicFactor;
+			material.roughnessFactor = glTFScene.materials[i].roughnessFactor;
+			shaderMaterials.push_back(std::move(material));
+		}
+		size_t materialBufferSize = shaderMaterials.size() * sizeof(VulkanglTFScene::ShadeMaterial);
 
-		struct StagingBuffer
+		typedef struct _StagingBuffer
 		{
 			VkBuffer buffer;
 			VkDeviceMemory memory;
-		}vertexStaging, indexStaging;
+		} StagingBuffer;
+		StagingBuffer vertexStaging, indexStaging;
+		StagingBuffer matrialStaging;
 
 		// Create host visible staging buffers (source)
 		VK_CHECK_RESULT(vulkanDevice->createBuffer(
@@ -1128,16 +1163,25 @@ public:
 			vertexBufferSize,
 			&vertexStaging.buffer,
 			&vertexStaging.memory,
-			glTFScene.vertexBuffer.data()
+			glTFScene.vertices.data()
 		));
-		// Index data
+		// Index data (source)
 		VK_CHECK_RESULT(vulkanDevice->createBuffer(
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			indexBufferSize,
 			&indexStaging.buffer,
 			&indexStaging.memory,
-			glTFScene.indexBuffer.data()
+			glTFScene.indices.data()
+		));
+		// material data (source)
+		VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			materialBufferSize,
+			&matrialStaging.buffer,
+			&matrialStaging.memory,
+			shaderMaterials.data()
 		));
 
 		// Create device local buffers (target)
@@ -1145,15 +1189,22 @@ public:
 			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			vertexBufferSize,
-			&glTFScene.vertices.buffer,
-			&glTFScene.vertices.memory
+			&glTFScene.vertexBuffer.buffer,
+			&glTFScene.vertexBuffer.memory
 		));
 		VK_CHECK_RESULT(vulkanDevice->createBuffer(
 			VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			indexBufferSize,
-			&glTFScene.indices.buffer,
-			&glTFScene.indices.memory
+			&glTFScene.indexBuffer.buffer,
+			&glTFScene.indexBuffer.memory
+		));
+		VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			materialBufferSize,
+			&glTFScene.materialBuffer.buffer,
+			&glTFScene.materialBuffer.memory
 		));
 
 		// Copy data from staging buffers (host) to device local buffer (gpu)
@@ -1165,7 +1216,7 @@ public:
 		vkCmdCopyBuffer(
 			copyCmd,
 			vertexStaging.buffer,
-			glTFScene.vertices.buffer,
+			glTFScene.vertexBuffer.buffer,
 			1,
 			&copyRegion
 		);
@@ -1175,7 +1226,7 @@ public:
 		vkCmdCopyBuffer(
 			copyCmd,
 			indexStaging.buffer,
-			glTFScene.indices.buffer,
+			glTFScene.indexBuffer.buffer,
 			1,
 			&copyRegion
 		);
