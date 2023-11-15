@@ -1154,7 +1154,7 @@ public:
 			VkDeviceMemory memory;
 		} StagingBuffer;
 		StagingBuffer vertexStaging, indexStaging;
-		StagingBuffer matrialStaging;
+		StagingBuffer materialStaging;
 
 		// Create host visible staging buffers (source)
 		VK_CHECK_RESULT(vulkanDevice->createBuffer(
@@ -1179,8 +1179,8 @@ public:
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			materialBufferSize,
-			&matrialStaging.buffer,
-			&matrialStaging.memory,
+			&materialStaging.buffer,
+			&materialStaging.memory,
 			shaderMaterials.data()
 		));
 
@@ -1231,6 +1231,16 @@ public:
 			&copyRegion
 		);
 
+		// copy material buffer
+		copyRegion.size = materialBufferSize;
+		vkCmdCopyBuffer(
+			copyCmd,
+			materialStaging.buffer,
+			glTFScene.materialBuffer.buffer,
+			1,
+			&copyRegion
+		);
+
 		vulkanDevice->flushCommandBuffer(copyCmd, queue, true);
 
 		// Free staging resources
@@ -1238,6 +1248,8 @@ public:
 		vkFreeMemory(device, vertexStaging.memory, nullptr);
 		vkDestroyBuffer(device, indexStaging.buffer, nullptr);
 		vkFreeMemory(device, indexStaging.memory, nullptr);
+		vkDestroyBuffer(device, materialStaging.buffer, nullptr);
+		vkFreeMemory(device, materialStaging.memory, nullptr);
 	}
 };
 
