@@ -1154,7 +1154,7 @@ public:
 			VkDeviceMemory memory;
 		} StagingBuffer;
 		StagingBuffer vertexStaging, indexStaging;
-		StagingBuffer materialStaging;
+		StagingBuffer materialStaging, primitiveStaging;
 
 		// Create host visible staging buffers (source)
 		VK_CHECK_RESULT(vulkanDevice->createBuffer(
@@ -1182,6 +1182,11 @@ public:
 			&materialStaging.buffer,
 			&materialStaging.memory,
 			shaderMaterials.data()
+		));
+		// primitive data (source)
+		VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		));
 
 		// Create device local buffers (target)
