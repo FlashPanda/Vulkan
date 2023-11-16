@@ -61,6 +61,12 @@ public:
 		VkDeviceMemory memory;
 	} materialBuffer;
 
+	// primitive buffer 
+	struct {
+		VkBuffer buffer;
+		VkDeviceMemory memory;
+	} primitiveBuffer;
+
 	// The following structures roughly represent the glTF scene structure
 	// To keep things simple, they only contain those properties that are required for this sample
 	struct Node;
@@ -445,6 +451,8 @@ public:
 		glm::mat4 viewInverse;
 		glm::mat4 projInverse;
 		int32_t vertexSize;
+		int32_t materialSize;
+		int32_t primitiveSize;
 	} uniformData;
 	vks::Buffer ubo;
 
@@ -626,7 +634,7 @@ public:
 			{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
 			{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
 			{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 }
+			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4 }
 		};
 
 		VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = vks::initializers::descriptorPoolCreateInfo(poolSizes, 1);
@@ -652,6 +660,8 @@ public:
 		VkDescriptorImageInfo storageImageDescriptor{ VK_NULL_HANDLE, storageImage.view, VK_IMAGE_LAYOUT_GENERAL };
 		VkDescriptorBufferInfo vertexBufferDescriptor{ glTFScene.vertexBuffer.buffer, 0, VK_WHOLE_SIZE };
 		VkDescriptorBufferInfo indexBufferDescriptor{ glTFScene.indexBuffer.buffer, 0, VK_WHOLE_SIZE };
+		VkDescriptorBufferInfo materialBufferDescriptor{ glTFScene.materialBuffer.buffer, 0, VK_WHOLE_SIZE };
+		VkDescriptorBufferInfo primtiveBufferDescriptor{ glTFScene.primitiveBuffer.buffer, 0, VK_WHOLE_SIZE };
 
 		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 			// Binding 0: Top level acceleration structure
@@ -662,8 +672,12 @@ public:
 			vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2, &ubo.descriptor),
 			// Binding 3: scene vertex buffer
 			vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3, &vertexBufferDescriptor),
-			// BInding 4: scene index buffer
+			// Binding 4: scene index buffer
 			vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4, &indexBufferDescriptor),
+			// Binding 5: scene material buffer
+			vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5, &materialBufferDescriptor),
+			// Binding 6: scene primitive buffer
+			vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6, &primtiveBufferDescriptor),
 		};
 
 		vkUpdateDescriptorSets(device,
@@ -697,13 +711,11 @@ public:
 		VK_CHECK_RESULT(vkGetRayTracingShaderGroupHandlesKHR(device, pipeline, 0, groupCount, sbtSize, shaderHandleStorage.data()));
 
 		createShaderBindingTable(shaderBindingTables.raygen, 1);
-		// We are using two miss shaders
 		createShaderBindingTable(shaderBindingTables.miss, 1);
 		createShaderBindingTable(shaderBindingTables.hit, 1);
 
 		// Copy handles
 		memcpy(shaderBindingTables.raygen.mapped, shaderHandleStorage.data(), handleSize);
-		// We are using two miss shaders, so we need to get two handles for the miss shader binding table
 		memcpy(shaderBindingTables.miss.mapped, shaderHandleStorage.data() + handleSizeAligned, handleSize);
 		memcpy(shaderBindingTables.hit.mapped, shaderHandleStorage.data() + handleSizeAligned * 2, handleSize);
 
@@ -723,6 +735,10 @@ public:
 			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 3),
 			// Binding 4: Index buffer
 			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 4),
+			// Binding 5: material buffer
+			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 5),
+			// Binding 6: primitive buffer
+			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 6),
 		};
 
 		VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings);
@@ -808,6 +824,8 @@ public:
 		uniformData.viewInverse = glm::inverse(camera.matrices.view);
 		// Pass the vertex size to the shader for unpacking vertices
 		uniformData.vertexSize = sizeof(VulkanglTFScene::Vertex);
+		uniformData.materialSize = sizeof(VulkanglTFScene::ShadeMaterial);
+		uniformData.primitiveSize = sizeof(VulkanglTFScene::Primitive);
 
 		memcpy(ubo.mapped, &uniformData, sizeof(uniformData));
 	}
@@ -1147,6 +1165,27 @@ public:
 			shaderMaterials.push_back(std::move(material));
 		}
 		size_t materialBufferSize = shaderMaterials.size() * sizeof(VulkanglTFScene::ShadeMaterial);
+		// flat the nodes to get primitive data
+		std::vector<VulkanglTFScene::Primitive> primitives;
+		std::function<void(VulkanglTFScene::Node* , std::vector<VulkanglTFScene::Primitive>&)> flatNodes = [&flatNodes](VulkanglTFScene::Node* _node, std::vector<VulkanglTFScene::Primitive>& _primitives)
+		{
+			if (_node == nullptr)
+				return;
+
+			for (int32_t i = 0; i < _node->mesh.primitives.size(); ++i)
+			{
+				_primitives.push_back(_node->mesh.primitives[i]);
+			}
+
+			for (int32_t i = 0; i < _node->children.size(); ++i)
+			{
+				flatNodes(_node->children[i], _primitives);
+			}
+		};
+		for (int32_t i = 0; i < glTFScene.nodes.size(); ++i)
+		{
+			flatNodes(glTFScene.nodes[i], primitives);
+		}
 
 		typedef struct _StagingBuffer
 		{
@@ -1184,9 +1223,14 @@ public:
 			shaderMaterials.data()
 		));
 		// primitive data (source)
+		size_t primitiveBufferSize = primitives.size() * sizeof(VulkanglTFScene::Primitive);
 		VK_CHECK_RESULT(vulkanDevice->createBuffer(
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			primitiveBufferSize,
+			&primitiveStaging.buffer,
+			&primitiveStaging.memory,
+			primitives.data()
 		));
 
 		// Create device local buffers (target)
@@ -1210,6 +1254,14 @@ public:
 			materialBufferSize,
 			&glTFScene.materialBuffer.buffer,
 			&glTFScene.materialBuffer.memory
+		));
+		
+		VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			primitiveBufferSize,
+			&glTFScene.primitiveBuffer.buffer,
+			&glTFScene.primitiveBuffer.memory
 		));
 
 		// Copy data from staging buffers (host) to device local buffer (gpu)
@@ -1246,6 +1298,16 @@ public:
 			&copyRegion
 		);
 
+		// copy primitive buffer
+		copyRegion.size = primitiveBufferSize;
+		vkCmdCopyBuffer(
+			copyCmd,
+			primitiveStaging.buffer,
+			glTFScene.primitiveBuffer.buffer,
+			1,
+			&copyRegion
+		);
+
 		vulkanDevice->flushCommandBuffer(copyCmd, queue, true);
 
 		// Free staging resources
@@ -1255,6 +1317,8 @@ public:
 		vkFreeMemory(device, indexStaging.memory, nullptr);
 		vkDestroyBuffer(device, materialStaging.buffer, nullptr);
 		vkFreeMemory(device, materialStaging.memory, nullptr);
+		vkDestroyBuffer(device, primitiveStaging.buffer, nullptr);
+		vkFreeMemory(device, primitiveStaging.memory, nullptr);
 	}
 };
 

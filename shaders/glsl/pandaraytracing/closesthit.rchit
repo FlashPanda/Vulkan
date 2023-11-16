@@ -10,9 +10,13 @@ layout(binding = 2, set = 0) uniform UBO
 	mat4 viewInverse;
 	mat4 projInverse;
 	int vertexSize;
+	int materialSize;
+	int primitiveSize;
 } ubo;
 layout(binding = 3, set = 0) buffer Vertices { vec4 v[]; } vertices;
 layout(binding = 4, set = 0) buffer Indices { uint i[]; } indices;
+layout(binding = 5, set = 0) buffer Materials {vec4 m[]; } materials;
+layout(binding = 6, set = 0) buffer Primitives {uint p[];} primitives;
 
 struct Vertex {
 	vec3 pos;
@@ -21,6 +25,21 @@ struct Vertex {
 	vec3 color;
 	vec4 tangent;
 	float pad;
+};
+
+struct ShadeMaterial
+{
+	vec4		baseColorFactor;
+	uint		baseColorTextureIndex;
+	float		metallicFactor;
+	float		roughnessFactor;
+	float		pad;	// 补足对齐用
+};
+
+struct Primitive {
+	uint firstIndex;
+	uint indexCount;
+	int materialIndex;
 };
 
 const float PI = 3.14159265359;
@@ -44,6 +63,28 @@ Vertex unpack(uint index)
 	v.tangent = vec4(d2.w, d3.x, d3.y, d3.z);
 	
 	return v;
+}
+
+ShadeMaterial unpackMaterial(uint index)
+{
+	const int t = ubo.materialSize / 16;
+	ShadeMaterial material;
+	material.baseColorFactor = materials.m[t * index + 0];
+	material.baseColorTextureIndex = floatBitsToInt(materials.m[t * index + 1][0]);
+	material.metallicFactor = materials.m[t * index + 1][1];
+	material.roughnessFactor = materials.m[t * index + 1][2];
+	return material;
+}
+
+Primitive unpackPrimitive(uint index)
+{
+	const int t = ubo.primitiveSize / 4;
+	
+	Primitive primitive;
+	primitive.firstIndex = primitives.p[t * index + 0];
+	primitive.indexCount = primitives.p[t * index + 1];
+	primitive.materialIndex = floatBitsToInt(uintBitsToFloat(primitives.p[t * index + 2]));
+	return primitive;
 }
 
 // Cook-Torrance BRDF
