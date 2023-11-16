@@ -61,6 +61,12 @@ public:
 		VkDeviceMemory memory;
 	} materialBuffer;
 
+	// primitive buffer 
+	struct {
+		VkBuffer buffer;
+		VkDeviceMemory memory;
+	} primitiveBuffer;
+
 	// The following structures roughly represent the glTF scene structure
 	// To keep things simple, they only contain those properties that are required for this sample
 	struct Node;
@@ -1147,6 +1153,27 @@ public:
 			shaderMaterials.push_back(std::move(material));
 		}
 		size_t materialBufferSize = shaderMaterials.size() * sizeof(VulkanglTFScene::ShadeMaterial);
+		// flat the nodes to get primitive data
+		std::vector<VulkanglTFScene::Primitive> primitives;
+		std::function<void(VulkanglTFScene::Node* , std::vector<VulkanglTFScene::Primitive>&)> flatNodes = [&flatNodes](VulkanglTFScene::Node* _node, std::vector<VulkanglTFScene::Primitive>& _primitives)
+		{
+			if (_node == nullptr)
+				return;
+
+			for (int32_t i = 0; i < _node->mesh.primitives.size(); ++i)
+			{
+				_primitives.push_back(_node->mesh.primitives[i]);
+			}
+
+			for (int32_t i = 0; i < _node->children.size(); ++i)
+			{
+				flatNodes(_node->children[i], _primitives);
+			}
+		};
+		for (int32_t i = 0; i < glTFScene.nodes.size(); ++i)
+		{
+			flatNodes(glTFScene.nodes[i], primitives);
+		}
 
 		typedef struct _StagingBuffer
 		{
@@ -1154,7 +1181,7 @@ public:
 			VkDeviceMemory memory;
 		} StagingBuffer;
 		StagingBuffer vertexStaging, indexStaging;
-		StagingBuffer materialStaging;
+		StagingBuffer materialStaging, primitiveStaging;
 
 		// Create host visible staging buffers (source)
 		VK_CHECK_RESULT(vulkanDevice->createBuffer(
@@ -1175,6 +1202,15 @@ public:
 			glTFScene.indices.data()
 		));
 		// material data (source)
+		VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			materialBufferSize,
+			&materialStaging.buffer,
+			&materialStaging.memory,
+			shaderMaterials.data()
+		));
+		// primitive data (source)
 		VK_CHECK_RESULT(vulkanDevice->createBuffer(
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
