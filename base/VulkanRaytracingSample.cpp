@@ -154,6 +154,7 @@ void VulkanRaytracingSample::createAccelerationStructure(AccelerationStructure& 
 	bufferCreateInfo.size = buildSizeInfo.accelerationStructureSize;
 	bufferCreateInfo.usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 	VK_CHECK_RESULT(vkCreateBuffer(vulkanDevice->logicalDevice, &bufferCreateInfo, nullptr, &accelerationStructure.buffer));
+
 	VkMemoryRequirements memoryRequirements{};
 	vkGetBufferMemoryRequirements(vulkanDevice->logicalDevice, accelerationStructure.buffer, &memoryRequirements);
 	VkMemoryAllocateFlagsInfo memoryAllocateFlagsInfo{};
@@ -166,6 +167,7 @@ void VulkanRaytracingSample::createAccelerationStructure(AccelerationStructure& 
 	memoryAllocateInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	VK_CHECK_RESULT(vkAllocateMemory(vulkanDevice->logicalDevice, &memoryAllocateInfo, nullptr, &accelerationStructure.memory));
 	VK_CHECK_RESULT(vkBindBufferMemory(vulkanDevice->logicalDevice, accelerationStructure.buffer, accelerationStructure.memory, 0));
+
 	// Acceleration structure
 	VkAccelerationStructureCreateInfoKHR accelerationStructureCreate_info{};
 	accelerationStructureCreate_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;

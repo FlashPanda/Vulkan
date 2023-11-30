@@ -39,6 +39,8 @@ struct ShadeMaterial
 struct Primitive {
 	uint firstIndex;
 	uint indexCount;
+	uint vertexCount;
+	uint vertexOffset;
 	int materialIndex;
 };
 
@@ -83,7 +85,9 @@ Primitive unpackPrimitive(uint index)
 	Primitive primitive;
 	primitive.firstIndex = primitives.p[t * index + 0];
 	primitive.indexCount = primitives.p[t * index + 1];
-	primitive.materialIndex = floatBitsToInt(uintBitsToFloat(primitives.p[t * index + 2]));
+	primitive.vertexCount = primitives.p[t * index + 2];
+	primitive.vertexOffset = primitives.p[t * index + 3];
+	primitive.materialIndex = floatBitsToInt(uintBitsToFloat(primitives.p[t * index + 4]));
 	return primitive;
 }
 
