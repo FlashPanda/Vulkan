@@ -17,6 +17,7 @@ layout(binding = 3, set = 0) buffer Vertices { vec4 v[]; } vertices;
 layout(binding = 4, set = 0) buffer Indices { uint i[]; } indices;
 layout(binding = 5, set = 0) buffer Materials {vec4 m[]; } materials;
 layout(binding = 6, set = 0) buffer Primitives {uint p[];} primitives;
+layout(binding = 7, set = 0) uniform sampler2D image;
 
 struct Vertex {
 	vec3 pos;
@@ -140,6 +141,19 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
 	return ggx1 * ggx2;
 }
 
+Primitive GetPrimtive(uint index, int _primitiveCount)
+{
+	for (uint i = 0; i < _primitiveCount; ++i)
+	{
+		Primitive primitive = unpackPrimitive(index);
+		if (index >= primitive.firstIndex)
+		{
+			return primitive;
+		}
+	}
+	return unpackPrimitive(0);
+}
+
 void main()
 {
 	// world position of light
@@ -151,6 +165,15 @@ void main()
 	Vertex v0 = unpack(index.x);
 	Vertex v1 = unpack(index.y);
 	Vertex v2 = unpack(index.z);
+
+	// Get Primitive info
+	int PrimitiveSize = 20;
+	int PrimitiveCount = ubo.primitiveSize / PrimitiveSize;
+	uint minIndex = min(min(indices.i[3 * gl_PrimitiveID], indices.i[3 * gl_PrimitiveID + 1]), indices.i[3 * gl_PrimitiveID + 2]);
+	Primitive primitive = GetPrimtive(minIndex, PrimitiveCount);
+
+	// get material info
+	ShadeMaterial material = unpackMaterial(primitive.materialIndex);
 	
 	
 	// Interpolate normal
@@ -158,6 +181,7 @@ void main()
 	vec3 normal = normalize(v0.normal * barycentricCoords.x + v1.normal * barycentricCoords.y + v2.normal * barycentricCoords.z);
 	vec3 hitPos = v0.pos * barycentricCoords.x + v1.pos * barycentricCoords.y + v2.pos * barycentricCoords.z;
 	vec3 hitPos_world = vec3(gl_ObjectToWorldEXT * vec4(hitPos, 1.0));
+	vec2 uv = v0.uv * barycentricCoords.x + v1.uv * barycentricCoords.y + v2.uv * barycentricCoords.z;		// Interpolate uv
 	
 	// pbr rendering
 	vec3 N = normal;
@@ -174,9 +198,9 @@ void main()
 	float attenuation = 1.0 / ((0.6 * distance * distance) + 1.0);
 	vec3 radiance = lightColor.xyz * intensity * attenuation;
 	
-	vec3 albedo = vec3(0.5, 0.5, 0.5);
-	float metallic = 0.1;
-	float roughness = 0.4;
+	vec3 albedo = (material.baseColorTextureIndex == -1 ?  material.baseColorFactor : texture(image, uv)).xyz;	//vec3(0.5, 0.5, 0.5);
+	float metallic = material.metallicFactor; //0.1;
+	float roughness = material.roughnessFactor; //0.4;
 	
 	vec3 F0 = vec3(0.04);
 	F0 = mix(F0, albedo, metallic);

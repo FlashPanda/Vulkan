@@ -667,7 +667,8 @@ public:
 			{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
 			{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
 			{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4 }
+			{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4 },
+			{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}		// Contains a image view and a sampler
 		};
 
 		VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = vks::initializers::descriptorPoolCreateInfo(poolSizes, 1);
@@ -711,6 +712,8 @@ public:
 			vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5, &materialBufferDescriptor),
 			// Binding 6: scene primitive buffer
 			vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6, &primtiveBufferDescriptor),
+			// Binding 7: Texture image
+			vks::initializers::writeDescriptorSet(descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7, &textures[0].descriptor)
 		};
 
 		vkUpdateDescriptorSets(device,
@@ -772,6 +775,8 @@ public:
 			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 5),
 			// Binding 6: primitive buffer
 			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 6),
+			// Binding 7: Texture image
+			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 7),
 		};
 
 		VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings);
