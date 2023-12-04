@@ -130,10 +130,10 @@ public:
 	struct ShadeMaterial
 	{
 		glm::vec4		baseColorFactor = glm::vec4(1.0f);
-		uint32_t		baseColorTextureIndex;
+		int32_t			baseColorTextureIndex{ -1 };
 		float			metallicFactor{ 1.f };
 		float			roughnessFactor{ 1.f };
-		float			pad;	// 补足对齐用
+		float			pad{ 0.0f };	// 补足对齐用
 	};
 
 	// Contains the texture for a single glTF image
@@ -447,6 +447,8 @@ class VulkanExample : public VulkanRaytracingSample
 public:
 	VulkanglTFScene glTFScene;
 
+	std::vector<vks::Texture2D> textures;
+
 	std::vector<AccelerationStructure> mBlas;
 	AccelerationStructure mTlas{};
 
@@ -526,6 +528,7 @@ public:
 		VulkanRaytracingSample::prepare();
 
 		loadglTFFile(getPandaAssetPath() + "cornell_box/cornellBox.gltf");
+		loadTextures();
 
 		// Create the accleration structures used to render the ray traced scene
 		createBottomLevelAccelerationStructure();
@@ -1345,7 +1348,7 @@ public:
 		{
 			VulkanglTFScene::ShadeMaterial material;
 			material.baseColorFactor = glTFScene.materials[i].baseColorFactor;
-			material.baseColorTextureIndex = glTFScene.materials[i].baseColorTextureIndex;
+			material.baseColorTextureIndex = i == 0? 0 : glTFScene.materials[i].baseColorTextureIndex;
 			material.metallicFactor = glTFScene.materials[i].metallicFactor;
 			material.roughnessFactor = glTFScene.materials[i].roughnessFactor;
 			shaderMaterials.push_back(std::move(material));
@@ -1494,6 +1497,14 @@ public:
 		vkFreeMemory(device, materialStaging.memory, nullptr);
 		vkDestroyBuffer(device, primitiveStaging.buffer, nullptr);
 		vkFreeMemory(device, primitiveStaging.memory, nullptr);
+	}
+
+	// Load one texture used to show example with texture
+	void loadTextures() 
+	{
+		vks::Texture2D texture;
+		texture.loadFromFile(getAssetPath() + "textures/gratefloor_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, queue);
+		textures.emplace_back(texture);
 	}
 };
 

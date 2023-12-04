@@ -30,7 +30,7 @@ struct Vertex {
 struct ShadeMaterial
 {
 	vec4		baseColorFactor;
-	uint		baseColorTextureIndex;
+	int			baseColorTextureIndex;
 	float		metallicFactor;
 	float		roughnessFactor;
 	float		pad;	// 补足对齐用
