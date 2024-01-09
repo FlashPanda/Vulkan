@@ -58,6 +58,9 @@ public:
 		camera.setRotation(glm::vec3(45.0f, 0.0f, 0.0f));
 		camera.setTranslation(glm::vec3(0.0f, 0.0f, -1.0f));
 		enableExtensions();
+		// Replace parent with Vulkan 1.2
+		apiVersion = VK_API_VERSION_1_2;
+
 		// Buffer device address requires the 64-bit integer feature to be enabled
 		enabledFeatures.shaderInt64 = VK_TRUE;
 	}
