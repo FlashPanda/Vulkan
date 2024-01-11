@@ -166,6 +166,7 @@ set(EXAMPLES
 	viewportarray
 	vulkanscene
 	panda_raytracing
+	panda_demo
 )
 
 buildExamples()
